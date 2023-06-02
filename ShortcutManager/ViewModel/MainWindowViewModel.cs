@@ -183,7 +183,6 @@ public class MainWindowViewModel : ViewModelBase, IOperator
 
         icon = IconHelper.GetIcon(index, IconHelper.IMAGELIST_SIZE_FLAG.SHIL_EXTRALARGE);
 
-        // pack://application:,,,/ShortcutManager;component/Image/unknown-file-icon.png
         var hIcon = icon.ToBitmap().GetHicon();
         var sourceIcon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(hIcon,
             Int32Rect.Empty,
