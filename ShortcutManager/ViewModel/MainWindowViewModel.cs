@@ -60,8 +60,9 @@ public class MainWindowViewModel : ViewModelBase, IOperator
             }
         }
 
-        _context.Database.EnsureCreated();
-        _context.EnsureCreatingMissingTables();
+        _context.Database.Migrate();
+        // _context.Database.EnsureCreated();
+        // _context.EnsureCreatingMissingTables();
         var dataList = _context.Datas.ToList();
         dataList.ForEach(data => { ShowShortcut(data.ShortcutPath, data.IsMyComputer); });
     }
