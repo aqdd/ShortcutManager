@@ -8,7 +8,11 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using ShortcutManager.Config;
 using ShortcutManager.Core;
+using ShortcutManager.Extension;
 using ShortcutManager.Helper;
 using ShortcutManager.Model;
 using Brushes = System.Windows.Media.Brushes;
@@ -18,7 +22,8 @@ namespace ShortcutManager.ViewModel;
 
 public class MainWindowViewModel : ViewModelBase, IOperator
 {
-    private MainWindow _mw;
+    private readonly MainWindow _mw;
+    private readonly MyDbContext _context = new();
 
     public MainWindowViewModel(MainWindow mw)
     {
@@ -28,8 +33,45 @@ public class MainWindowViewModel : ViewModelBase, IOperator
         RunCommand = new RelayCommand<object>(Run);
         ContextMenuCommand = new RelayCommand<object>(ShowContextMenu);
 
+        Init();
+        if (_datas.Count > 0)
+        {
+            return;
+        }
+
         var myComputer = Environment.GetFolderPath(Environment.SpecialFolder.MyComputer);
         SaveShortcut(myComputer, true);
+    }
+
+    private void Init()
+    {
+        var dbPath = Path.Combine(Environment.CurrentDirectory, @"data.db");
+        if (!File.Exists(dbPath))
+        {
+            try
+            {
+                var uri = new Uri("pack://application:,,,/Db/data.db", UriKind.RelativeOrAbsolute);
+                var stream = Application.GetResourceStream(uri).Stream;
+                stream.ToFile(@"data.db");
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show(e.Message);
+            }
+        }
+
+        _context.Database.EnsureCreated();
+        _context.EnsureCreatingMissingTables();
+        var datas = _context.Datas.ToList();
+        datas.ForEach(data => { ShowShortcut(data.ShortcutPath, data.IsMyComputer); });
+    }
+
+    public byte[] StreamToBytes(Stream stream)
+    {
+        byte[] bytes = new byte[stream.Length];
+        stream.Read(bytes, 0, bytes.Length);
+        stream.Seek(0, SeekOrigin.Begin); // 设置当前流的位置为流的开始
+        return bytes;
     }
 
     private ObservableCollection<MyListBoxData> _datas = new();
@@ -42,7 +84,7 @@ public class MainWindowViewModel : ViewModelBase, IOperator
     public ICommand RunCommand { get; }
     public ICommand ContextMenuCommand { get; }
 
-    private void Run(object o)
+    private static void Run(object o)
     {
         var data = (MyListBoxData)o;
         if (data.RealPath == "")
@@ -73,7 +115,7 @@ public class MainWindowViewModel : ViewModelBase, IOperator
         // process.Start();
     }
 
-    private void ShowContextMenu(object o)
+    private static void ShowContextMenu(object o)
     {
         var data = (MyListBoxData)o;
 
@@ -98,7 +140,7 @@ public class MainWindowViewModel : ViewModelBase, IOperator
         // Themes.cpl     Desktop Themes 
         // TimeDate.cpl   Date/Time properties
         // Wgpocpl.cpl    Microsoft Mail Post Office
-        if (data.ShortcutPath=="" && data.RealPath=="")
+        if (data.ShortcutPath == "" && data.RealPath == "")
         {
             var psi = new ProcessStartInfo("sysdm.cpl")
             {
@@ -131,6 +173,9 @@ public class MainWindowViewModel : ViewModelBase, IOperator
 
     public void SaveShortcut(object sender, DragEventArgs e)
     {
+        var border = _mw.BorderLine;
+        border.Stroke = Brushes.White;
+        border.StrokeThickness = 0;
         var files = (string[])e.Data.GetData(DataFormats.FileDrop);
         if (files is null)
         {
@@ -143,12 +188,38 @@ public class MainWindowViewModel : ViewModelBase, IOperator
             SaveShortcut(file);
         }
 
-        var border = _mw.BorderLine;
-        border.Stroke = Brushes.White;
-        border.StrokeThickness = 0;
     }
 
     private void SaveShortcut(string file, bool isMyComputer = false)
+    {
+        var data = ShowShortcut(file, isMyComputer);
+
+
+        _context.Datas.Add(data);
+        try
+        {
+            var sci = _context.SaveChanges();
+        }
+        catch (DbUpdateException e)
+        {
+            switch (e.InnerException)
+            {
+                case SqliteException:
+                    var se = e.InnerException as SqliteException;
+                    if (se.SqliteErrorCode is 19)
+                    {
+                        MessageBox.Show("目标已存在，无法重复创建");
+                    }
+
+                    break;
+                default:
+                    MessageBox.Show(e.Message+"\r\n"+e.Data);
+                    break;
+            }
+        }
+    }
+
+    private Data ShowShortcut(string file, bool isMyComputer)
     {
         // 1、文件夹-快捷方式 Path有具体值，值为真实路径
         // 2、真实路径文件夹 Path值为空字符串
@@ -188,11 +259,16 @@ public class MainWindowViewModel : ViewModelBase, IOperator
             Int32Rect.Empty,
             BitmapSizeOptions.FromEmptyOptions());
 
-        _datas.Add(new MyListBoxData
+        var data = new Data
         {
-            Src = sourceIcon, Name = s.Name, RealPath = s.Path, ShortcutPath = file, Arguments = s.Arguments,
-            Verbs = verbs
-        });
+            Name = s.Name, RealPath = s.Path, ShortcutPath = file, Arguments = s.Arguments, Verbs = verbs,
+            IsMyComputer = isMyComputer, Categories = null, UpdateTimestamp = 0, Sort = 0
+        };
+
+        var lbData = CopyHelper.AutoCopy<Data, MyListBoxData>(data);
+        lbData.Src = sourceIcon;
+        _datas.Add(lbData);
+        return data;
     }
 
     private Color Invert(Color originalColor)
