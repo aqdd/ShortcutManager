@@ -37,7 +37,7 @@ jobs:
         
       - name: Build project # This would actually build your project, using zip for an example artifact
         run: |
-          dotnet publish -r win-x64 --self-contained=false /p:PublishSingleFile=true /p:Configuration=$env:Configuration /p:PublishDir=${{ env.Wap_Project_Directory }}\Publish
+          dotnet publish -r win-x64 --self-contained=false /p:IncludeNativeLibrariesForSelfExtract=true /p:PublishSingleFile=true /p:Configuration=$env:Configuration /p:PublishDir=${{ env.Wap_Project_Directory }}\Publish
         env:
           Configuration: ${{ matrix.configuration }}
         
